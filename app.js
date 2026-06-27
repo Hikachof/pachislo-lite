@@ -8,6 +8,7 @@ const appState = {
   machines: [],
   index: new Map(),
   selectedMachine: "",
+  selectedUnitKey: "",
   metadata: null,
 };
 
@@ -285,6 +286,10 @@ function buildIndex(records) {
   appState.selectedMachine = appState.selectedMachine && index.has(appState.selectedMachine)
     ? appState.selectedMachine
     : appState.machines[0] || "";
+  const units = appState.index.get(appState.selectedMachine) || new Map();
+  if (!appState.selectedUnitKey || !units.has(appState.selectedUnitKey)) {
+    appState.selectedUnitKey = units.keys().next().value || "";
+  }
 }
 
 function setData(records, metadata) {
@@ -319,17 +324,12 @@ function sortedUnitDisplays() {
 }
 
 function pickUnitRecords() {
-  const query = normalize($("#unitInput").value);
-  const queryNo = unitNumber($("#unitInput").value);
-  const units = sortedUnitDisplays();
-  if (!units.length) return [];
-  let picked = null;
-  if (query || queryNo) {
-    picked = units.find((unit) => queryNo && unit.unitNo === queryNo)
-      || units.find((unit) => query && normalize(unit.label).includes(query));
+  const units = currentUnits();
+  if (!units.size) return [];
+  if (!appState.selectedUnitKey || !units.has(appState.selectedUnitKey)) {
+    appState.selectedUnitKey = units.keys().next().value || "";
   }
-  picked ||= units[0];
-  return currentUnits().get(picked.key) || [];
+  return units.get(appState.selectedUnitKey) || [];
 }
 
 function isSpecial(record, chanceThreshold) {
@@ -492,8 +492,8 @@ function renderSelectors() {
   $("#machineSelect").innerHTML = appState.machines.map((machine) => `<option value="${esc(machine)}">${esc(machine)}</option>`).join("");
   $("#machineSelect").value = appState.selectedMachine;
   const units = sortedUnitDisplays();
-  $("#unitList").innerHTML = units.map((unit) => `<option value="${esc(unit.unitNo || unit.label)}">${esc(unit.label)} / ${odds(unit.avgStart)}</option>`).join("");
-  if (!$("#unitInput").value && units[0]) $("#unitInput").value = units[0].unitNo || units[0].label;
+  if (!appState.selectedUnitKey && units[0]) appState.selectedUnitKey = units[0].key;
+  renderUnitPicker(units);
 }
 
 function renderStatus() {
@@ -511,6 +511,41 @@ function toneClass(tone) {
 
 function metric(label, value) {
   return `<div class="metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+}
+
+function renderUnitPicker(units) {
+  const picker = $("#unitPicker");
+  if (!picker) return;
+  if (!units.length) {
+    picker.innerHTML = `<div class="note">表示できる台番がありません。</div>`;
+    return;
+  }
+  picker.innerHTML = units
+    .map((unit) => {
+      const selected = String(unit.key) === String(appState.selectedUnitKey);
+      return `
+        <button class="unit-button ${selected ? "selected" : ""}" type="button" data-unit-key="${esc(unit.key)}">
+          <strong>${esc(unit.label)}</strong>
+          <span>${number(unit.hits)}件 / ${odds(unit.avgStart)}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function cleanCurrentStart(value) {
+  const digits = String(value ?? "").replace(/\D/g, "").replace(/^0+(?=\d)/, "").slice(0, 5);
+  return digits || "0";
+}
+
+function setCurrentStart(value) {
+  $("#currentStartInput").value = cleanCurrentStart(value);
+  analyzeAndRender();
+}
+
+function appendCurrentStart(part) {
+  const current = cleanCurrentStart($("#currentStartInput").value);
+  setCurrentStart(current === "0" ? part : `${current}${part}`);
 }
 
 function analyzeAndRender() {
@@ -609,13 +644,39 @@ function bindEvents() {
   $("#backBtn").addEventListener("click", showAnalyze);
   $("#machineSelect").addEventListener("change", () => {
     appState.selectedMachine = $("#machineSelect").value;
-    $("#unitInput").value = "";
+    appState.selectedUnitKey = "";
     renderSelectors();
     analyzeAndRender();
   });
-  ["#unitInput", "#currentStartInput", "#rangeInput", "#chanceThresholdInput", "#recentDaysInput"].forEach((selector) => {
+  $("#unitPicker").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-unit-key]");
+    if (!button) return;
+    appState.selectedUnitKey = button.dataset.unitKey || "";
+    renderUnitPicker(sortedUnitDisplays());
+    analyzeAndRender();
+  });
+  ["#rangeInput", "#chanceThresholdInput", "#recentDaysInput"].forEach((selector) => {
     $(selector).addEventListener("input", analyzeAndRender);
     $(selector).addEventListener("change", analyzeAndRender);
+  });
+  $("#currentStartInput").addEventListener("click", () => {
+    $("#currentStartInput").blur();
+  });
+  $(".keypad").addEventListener("click", (event) => {
+    const keyButton = event.target.closest("[data-current-key]");
+    if (keyButton) {
+      appendCurrentStart(keyButton.dataset.currentKey || "");
+      return;
+    }
+    const actionButton = event.target.closest("[data-current-action]");
+    if (!actionButton) return;
+    const action = actionButton.dataset.currentAction;
+    if (action === "clear") {
+      setCurrentStart("0");
+    } else if (action === "back") {
+      const current = cleanCurrentStart($("#currentStartInput").value);
+      setCurrentStart(current.length > 1 ? current.slice(0, -1) : "0");
+    }
   });
   document.body.addEventListener("click", (event) => {
     const button = event.target.closest("[data-range]");

@@ -26,20 +26,34 @@
             機種
             <select id="machineSelect"></select>
           </label>
-          <label>
-            台番
-            <input id="unitInput" type="search" inputmode="numeric" list="unitList" autocomplete="off" placeholder="例: 615" />
-            <datalist id="unitList"></datalist>
-          </label>
+          <div class="unit-section">
+            <div class="field-label">台番</div>
+            <div id="unitPicker" class="unit-picker" aria-label="台番一覧"></div>
+          </div>
           <div class="two-inputs">
             <label>
               現在回転
-              <input id="currentStartInput" class="main-number" type="number" inputmode="numeric" min="0" step="1" value="0" />
+              <input id="currentStartInput" class="main-number" type="text" inputmode="none" readonly value="0" />
             </label>
             <label>
               見る範囲
               <input id="rangeInput" type="number" inputmode="numeric" min="10" step="10" value="100" />
             </label>
+          </div>
+          <div class="keypad" aria-label="現在回転入力">
+            <button type="button" data-current-key="1">1</button>
+            <button type="button" data-current-key="2">2</button>
+            <button type="button" data-current-key="3">3</button>
+            <button type="button" class="key-command" data-current-action="clear">Clear</button>
+            <button type="button" data-current-key="4">4</button>
+            <button type="button" data-current-key="5">5</button>
+            <button type="button" data-current-key="6">6</button>
+            <button type="button" class="key-command" data-current-action="back">←</button>
+            <button type="button" data-current-key="7">7</button>
+            <button type="button" data-current-key="8">8</button>
+            <button type="button" data-current-key="9">9</button>
+            <button type="button" data-current-key="00">00</button>
+            <button type="button" class="key-zero" data-current-key="0">0</button>
           </div>
           <div class="range-row">
             <button type="button" data-range="50">+50</button>

@@ -95,6 +95,12 @@ label {
   font-weight: 650;
 }
 
+.field-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 code {
   color: #315550;
   overflow-wrap: anywhere;
@@ -172,10 +178,86 @@ main {
   gap: 10px;
 }
 
+.unit-section {
+  display: grid;
+  gap: 6px;
+}
+
+.unit-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+  max-height: 170px;
+  overflow: auto;
+  padding: 2px 2px 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.unit-button {
+  min-height: 52px;
+  padding: 7px 8px;
+  color: var(--text);
+  background: #f5f8f7;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.unit-button.selected {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.unit-button strong,
+.unit-button span {
+  display: block;
+}
+
+.unit-button strong {
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.unit-button span {
+  margin-top: 3px;
+  color: inherit;
+  font-size: 11px;
+  opacity: 0.78;
+}
+
 .main-number {
   min-height: 50px;
   font-size: 24px;
   font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.keypad button {
+  min-height: 48px;
+  padding: 0;
+  color: var(--text);
+  background: #f5f8f7;
+  border: 1px solid var(--line);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.keypad .key-command {
+  color: #fff;
+  background: #5f6f6b;
+  border-color: #5f6f6b;
+  font-size: 14px;
+}
+
+.keypad .key-zero {
+  grid-column: 1 / -1;
 }
 
 .range-row {
@@ -322,5 +404,9 @@ summary {
   .metrics,
   .range-cards {
     grid-template-columns: 1fr;
+  }
+
+  .unit-picker {
+    grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   }
 }
