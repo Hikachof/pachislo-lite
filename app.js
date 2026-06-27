@@ -54,6 +54,10 @@ function mean(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
+function sum(values) {
+  return values.reduce((total, value) => total + value, 0);
+}
+
 function median(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -96,6 +100,28 @@ function isNoHitTerminal(record) {
 
 function hitRecords(records) {
   return records.filter((record) => !isNoHitTerminal(record));
+}
+
+function currentChanceThreshold() {
+  const input = $("#chanceThresholdInput");
+  return Math.max(1, toInt(input?.value, 157));
+}
+
+function normalHitRecords(records, chanceThreshold) {
+  return hitRecords(records).filter((record) => !isSpecial(record, chanceThreshold));
+}
+
+function unitProbabilityStats(records, chanceThreshold) {
+  const normalHits = normalHitRecords(records, chanceThreshold);
+  const terminalStarts = records.filter((record) => isNoHitTerminal(record)).map((record) => record.start);
+  const totalStart = sum(normalHits.map((record) => record.start)) + sum(terminalStarts);
+  const avgStart = normalHits.length ? totalStart / normalHits.length : 0;
+  return {
+    avgStart,
+    normalHitCount: normalHits.length,
+    terminalCount: terminalStarts.length,
+    totalStart,
+  };
 }
 
 function confidence(sampleCount) {
@@ -329,18 +355,15 @@ function currentUnits() {
 
 function unitDisplay(unitKey, records) {
   const first = records[0] || {};
-  const hits = hitRecords(records);
-  const normal = hits.filter((record) => !record.chanceKnown || !record.chance);
-  const p100 = probability(records, 0, 100, 157, true);
+  const stats = unitProbabilityStats(records, currentChanceThreshold());
   return {
     key: unitKey,
     label: first.unitLabel || unitKey,
     unitNo: first.unitNo || 0,
-    hits: hits.length,
-    sampleCount100: p100.reachedCount,
-    rate100: p100.rate,
-    terminalCount: records.length - hits.length,
-    avgStart: mean(normal.map((record) => record.start)),
+    hits: stats.normalHitCount,
+    terminalCount: stats.terminalCount,
+    totalStart: stats.totalStart,
+    avgStart: stats.avgStart,
   };
 }
 
@@ -558,14 +581,15 @@ function renderUnitPicker(units) {
     picker.innerHTML = `<div class="note">表示できる台番がありません。</div>`;
     return;
   }
+  const machineStats = unitProbabilityStats(Array.from(currentUnits().values()).flat(), currentChanceThreshold());
   picker.innerHTML = units
     .map((unit) => {
       const selected = String(unit.key) === String(appState.selectedUnitKey);
-      const tone = unitTone(unit);
+      const tone = unitTone(unit, machineStats);
       return `
         <button class="unit-button ${tone} ${selected ? "selected" : ""}" type="button" data-unit-key="${esc(unit.key)}">
           <strong>${esc(compactUnitLabel(unit.label))}</strong>
-          <span>${pct(unit.rate100)} / ${number(unit.hits)}件</span>
+          <span>${odds(unit.avgStart)} / ${number(unit.hits)}件</span>
         </button>
       `;
     })
@@ -587,10 +611,11 @@ function appendCurrentStart(part) {
   setCurrentStart(current === "0" ? part : `${current}${part}`);
 }
 
-function unitTone(unit) {
-  if (!unit || unit.sampleCount100 < 5) return "";
-  if (unit.rate100 >= 25) return "good";
-  if (unit.rate100 <= 10) return "bad";
+function unitTone(unit, machineStats) {
+  if (!unit || unit.hits < 3 || !unit.avgStart || !machineStats?.avgStart) return "";
+  const ratio = unit.avgStart / machineStats.avgStart;
+  if (ratio <= 0.9) return "good";
+  if (ratio >= 1.1) return "bad";
   return "neutral";
 }
 
@@ -708,8 +733,12 @@ function bindEvents() {
     analyzeAndRender();
   });
   ["#rangeInput", "#chanceThresholdInput", "#recentDaysInput"].forEach((selector) => {
-    $(selector).addEventListener("input", analyzeAndRender);
-    $(selector).addEventListener("change", analyzeAndRender);
+    const handler = () => {
+      if (selector === "#chanceThresholdInput") renderUnitPicker(sortedUnitDisplays());
+      analyzeAndRender();
+    };
+    $(selector).addEventListener("input", handler);
+    $(selector).addEventListener("change", handler);
   });
   $("#currentStartInput").addEventListener("click", () => {
     $("#currentStartInput").blur();
