@@ -2,6 +2,7 @@ const DB_NAME = "pachislo-lite";
 const DB_VERSION = 1;
 const STORE_NAME = "snapshots";
 const SNAPSHOT_ID = "main";
+const REMOTE_DATA_URL = "./pachislo-lite-data.json";
 
 const appState = {
   records: [],
@@ -17,6 +18,11 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 function text(value) {
   return value === undefined || value === null || value === "" ? "-" : String(value);
+}
+
+function setStatus(message) {
+  const el = $("#dataStatus");
+  if (el) el.textContent = message;
 }
 
 function esc(value) {
@@ -559,11 +565,12 @@ function renderSelectors() {
 
 function renderStatus() {
   if (!appState.records.length) {
-    $("#dataStatus").textContent = "データ未読込";
+    setStatus("データ未読込");
     return;
   }
   const meta = appState.metadata || {};
-  $("#dataStatus").textContent = `${number(appState.records.length)}件 / ${number(appState.machines.length)}機種 / ${meta.importedAt || ""}`;
+  const source = meta.remoteExportedAt ? `自動更新 ${meta.remoteExportedAt}` : meta.importedAt || "";
+  setStatus(`${number(appState.records.length)}件 / ${number(appState.machines.length)}機種 / ${source}`);
 }
 
 function toneClass(tone) {
@@ -674,7 +681,14 @@ function analyzeAndRender() {
   });
 }
 
-async function importText(rawText, sourceName) {
+function remoteSignature(rawText, parsed) {
+  const recordCount = parsed?.record_count ?? parsed?.records?.length ?? "";
+  const dateMin = parsed?.date_min ?? "";
+  const dateMax = parsed?.date_max ?? "";
+  return [recordCount, dateMin, dateMax, String(rawText || "").length].join(":");
+}
+
+async function importText(rawText, sourceName, options = {}) {
   const rows = parseInputData(rawText);
   const records = normalizeRows(rows);
   if (!records.length) {
@@ -684,11 +698,18 @@ async function importText(rawText, sourceName) {
     sourceName: sourceName || "manual",
     importedAt: new Date().toLocaleString("ja-JP", { hour12: false }),
     rawRows: rows.length,
+    remoteSignature: options.remoteSignature || "",
+    remoteExportedAt: options.remoteExportedAt || "",
+    remoteRecordCount: options.remoteRecordCount || "",
+    remoteDateMin: options.remoteDateMin || "",
+    remoteDateMax: options.remoteDateMax || "",
   };
   await saveSnapshot({ records, metadata });
   setData(records, metadata);
-  $("#importMessage").textContent = `${number(records.length)}件を保存しました。`;
-  showAnalyze();
+  if (!options.silent && $("#importMessage")) {
+    $("#importMessage").textContent = `${number(records.length)}件を保存しました。`;
+  }
+  if (!options.silent) showAnalyze();
 }
 
 function showImport() {
@@ -797,17 +818,51 @@ async function registerServiceWorker() {
   }
 }
 
+async function autoImportRemoteData() {
+  try {
+    setStatus("最新データ確認中");
+    const response = await fetch(`${REMOTE_DATA_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (response.status === 404) {
+      renderStatus();
+      return false;
+    }
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const rawText = await response.text();
+    const parsed = JSON.parse(rawText);
+    const signature = remoteSignature(rawText, parsed);
+    if (signature && appState.metadata?.remoteSignature === signature) {
+      renderStatus();
+      return false;
+    }
+    await importText(rawText, "GitHub Pages", {
+      silent: true,
+      remoteSignature: signature,
+      remoteExportedAt: parsed.exported_at || parsed.exportedAt || "",
+      remoteRecordCount: parsed.record_count || parsed.records?.length || "",
+      remoteDateMin: parsed.date_min || "",
+      remoteDateMax: parsed.date_max || "",
+    });
+    setStatus(`自動更新 ${number(appState.records.length)}件`);
+    return true;
+  } catch (error) {
+    renderStatus();
+    console.warn("Remote data update skipped:", error);
+    return false;
+  }
+}
+
 async function init() {
   bindEvents();
   await registerServiceWorker();
   const snapshot = await loadSnapshot();
   if (snapshot && Array.isArray(snapshot.records) && snapshot.records.length) {
     setData(snapshot.records, snapshot.metadata || null);
-    showAnalyze();
   } else {
     setData([], null);
-    showImport();
   }
+  await autoImportRemoteData();
+  if (appState.records.length) showAnalyze();
+  else showImport();
 }
 
 window.PachisloLite = {

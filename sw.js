@@ -1,4 +1,4 @@
-const CACHE_NAME = "pachislo-lite-v5";
+const CACHE_NAME = "pachislo-lite-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
