@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="台判定" />
+    <title>台判定</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>台判定</h1>
+        <p id="dataStatus">データ未読込</p>
+      </div>
+      <button id="showImportBtn" class="ghost" type="button">データ</button>
+    </header>
+
+    <main>
+      <section id="analyzeView" class="screen">
+        <section class="panel input-panel">
+          <label>
+            機種
+            <select id="machineSelect"></select>
+          </label>
+          <label>
+            台番
+            <input id="unitInput" type="search" inputmode="numeric" list="unitList" autocomplete="off" placeholder="例: 615" />
+            <datalist id="unitList"></datalist>
+          </label>
+          <div class="two-inputs">
+            <label>
+              現在回転
+              <input id="currentStartInput" class="main-number" type="number" inputmode="numeric" min="0" step="1" value="0" />
+            </label>
+            <label>
+              見る範囲
+              <input id="rangeInput" type="number" inputmode="numeric" min="10" step="10" value="100" />
+            </label>
+          </div>
+          <div class="range-row">
+            <button type="button" data-range="50">+50</button>
+            <button type="button" data-range="100" class="selected">+100</button>
+            <button type="button" data-range="200">+200</button>
+            <button type="button" data-range="300">+300</button>
+          </div>
+          <details>
+            <summary>判定設定</summary>
+            <div class="two-inputs settings">
+              <label>
+                確変判定回転
+                <input id="chanceThresholdInput" type="number" inputmode="numeric" min="1" step="1" value="157" />
+              </label>
+              <label>
+                最近判定日数
+                <input id="recentDaysInput" type="number" inputmode="numeric" min="1" max="14" step="1" value="3" />
+              </label>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel result-panel">
+          <div class="hero">
+            <div>
+              <span>判定</span>
+              <strong id="decisionText">データ待ち</strong>
+            </div>
+            <div>
+              <span>確変込み</span>
+              <strong id="allRateText">-</strong>
+            </div>
+            <div>
+              <span>範囲</span>
+              <strong id="rangeText">-</strong>
+            </div>
+          </div>
+          <div id="metrics" class="metrics"></div>
+          <div id="notes" class="notes"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>範囲別</h2>
+            <span id="unitSummary">-</span>
+          </div>
+          <div id="rangeCards" class="range-cards"></div>
+        </section>
+      </section>
+
+      <section id="importView" class="screen hidden">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>データ取り込み</h2>
+            <button id="backBtn" class="ghost" type="button">戻る</button>
+          </div>
+          <p class="muted">D-Deltaの台履歴CSV、または同じ項目を持つJSONを取り込みます。取り込んだデータはこのiPhone内に保存されます。</p>
+          <label class="file-box">
+            CSV/JSONファイル
+            <input id="fileInput" type="file" accept=".csv,.json,text/csv,application/json" />
+          </label>
+          <label>
+            テキスト貼り付け
+            <textarea id="pasteInput" rows="8" placeholder="CSVまたはJSONを貼り付け"></textarea>
+          </label>
+          <div class="actions">
+            <button id="importBtn" type="button">取り込む</button>
+            <button id="exportBtn" class="ghost" type="button">保存データを書き出す</button>
+            <button id="clearBtn" class="danger" type="button">削除</button>
+          </div>
+          <div id="importMessage" class="message"></div>
+        </section>
+
+        <section class="panel">
+          <h2>必要な列</h2>
+          <ul class="compact-list">
+            <li>機種: <code>machine_name</code></li>
+            <li>台番: <code>unit_label</code></li>
+            <li>日付: <code>history_date</code> または <code>history_day</code></li>
+            <li>回転数: <code>スタート</code></li>
+            <li>確変判定: <code>is_chance_hit</code> があれば精度が上がります</li>
+          </ul>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

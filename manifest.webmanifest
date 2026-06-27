@@ -1,0 +1,19 @@
+{
+  "name": "台判定",
+  "short_name": "台判定",
+  "description": "iPhone内に保存した台履歴で、現在回転からの当たり確率を即時計算します。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef4f2",
+  "theme_color": "#0f766e",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
