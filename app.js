@@ -78,6 +78,26 @@ function unitNumber(value) {
   return toInt(value, 0);
 }
 
+function dashLike(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  const normalized = raw.normalize("NFKC").replace(/[ー－−―‐]/g, "-").trim();
+  return /^-+$/.test(normalized);
+}
+
+function compactUnitLabel(value) {
+  const label = String(value ?? "").replace(/台番/g, "").replace(/\s+/g, "").trim();
+  return label || text(value);
+}
+
+function isNoHitTerminal(record) {
+  return Boolean(record.terminal) || (toInt(record.hitNo, 0) <= 0 && dashLike(record.time) && dashLike(record.payout));
+}
+
+function hitRecords(records) {
+  return records.filter((record) => !isNoHitTerminal(record));
+}
+
 function confidence(sampleCount) {
   if (sampleCount >= 80) return "高";
   if (sampleCount >= 25) return "中";
@@ -237,6 +257,7 @@ function normalizeRows(rows) {
     const rate = String(readColumn(row, ["rate_name", "レート"]) || "").trim();
     const payout = String(readColumn(row, ["獲得数（継続数）", "獲得数 （継続数）", "payout", "出玉"]) || "").trim();
     const chance = parseChance(row);
+    const terminal = hitNo <= 0 && dashLike(time) && dashLike(payout);
     const key = [machine, unitLabel, date, hitNo, time, start, payout].join("\u0000");
     if (dedupe.has(key)) continue;
     dedupe.add(key);
@@ -250,6 +271,7 @@ function normalizeRows(rows) {
       time,
       start,
       payout,
+      terminal,
       chanceKnown: chance.known,
       chance: chance.value,
     });
@@ -307,12 +329,17 @@ function currentUnits() {
 
 function unitDisplay(unitKey, records) {
   const first = records[0] || {};
-  const normal = records.filter((record) => !record.chanceKnown || !record.chance);
+  const hits = hitRecords(records);
+  const normal = hits.filter((record) => !record.chanceKnown || !record.chance);
+  const p100 = probability(records, 0, 100, 157, true);
   return {
     key: unitKey,
     label: first.unitLabel || unitKey,
     unitNo: first.unitNo || 0,
-    hits: records.length,
+    hits: hits.length,
+    sampleCount100: p100.reachedCount,
+    rate100: p100.rate,
+    terminalCount: records.length - hits.length,
     avgStart: mean(normal.map((record) => record.start)),
   };
 }
@@ -333,30 +360,39 @@ function pickUnitRecords() {
 }
 
 function isSpecial(record, chanceThreshold) {
+  if (isNoHitTerminal(record)) return false;
   if (record.hitNo === 1) return false;
   if (record.chanceKnown) return Boolean(record.chance);
   return record.start > 0 && record.start <= chanceThreshold;
 }
 
 function probability(records, currentStart, targetStart, chanceThreshold, includeSpecial) {
-  const scoped = includeSpecial ? records : records.filter((record) => !isSpecial(record, chanceThreshold));
-  const reached = scoped.filter((record) => record.start > currentStart);
-  const hits = reached.filter((record) => record.start <= targetStart);
-  const remaining = reached.map((record) => record.start - currentStart);
-  const rate = reached.length ? (hits.length / reached.length) * 100 : 0;
+  const scoped = includeSpecial ? records : records.filter((record) => isNoHitTerminal(record) || !isSpecial(record, chanceThreshold));
+  const hitScoped = scoped.filter((record) => !isNoHitTerminal(record));
+  const terminalScoped = scoped.filter((record) => isNoHitTerminal(record));
+  const reachedHits = hitScoped.filter((record) => record.start > currentStart);
+  const hits = reachedHits.filter((record) => record.start <= targetStart);
+  const terminalNoHits = terminalScoped.filter((record) => record.start >= targetStart);
+  const terminalPartial = terminalScoped.filter((record) => record.start > currentStart && record.start < targetStart);
+  const reachedCount = reachedHits.length + terminalNoHits.length;
+  const remaining = reachedHits.map((record) => record.start - currentStart);
+  const rate = reachedCount ? (hits.length / reachedCount) * 100 : 0;
   return {
     rate: round(rate),
     hitCount: hits.length,
-    reachedCount: reached.length,
+    reachedCount,
+    noHitCount: terminalNoHits.length,
+    partialNoHitCount: terminalPartial.length,
     avgRemaining: round(mean(remaining)),
     medianRemaining: round(median(remaining)),
-    confidence: confidence(reached.length),
+    confidence: confidence(reachedCount),
   };
 }
 
 function chainMetrics(records, chanceThreshold) {
+  const hits = hitRecords(records);
   const byDate = new Map();
-  for (const record of records) {
+  for (const record of hits) {
     const key = record.date || "unknown";
     if (!byDate.has(key)) byDate.set(key, []);
     byDate.get(key).push(record);
@@ -391,8 +427,9 @@ function chainMetrics(records, chanceThreshold) {
 function trend(records, recentDays) {
   const dates = Array.from(new Set(records.map((record) => record.date).filter(Boolean))).sort();
   const recentSet = new Set(dates.slice(-recentDays));
-  const longStarts = records.map((record) => record.start);
-  const recentStarts = records.filter((record) => recentSet.has(record.date)).map((record) => record.start);
+  const hits = hitRecords(records);
+  const longStarts = hits.map((record) => record.start);
+  const recentStarts = hits.filter((record) => recentSet.has(record.date)).map((record) => record.start);
   const longAvg = mean(longStarts);
   const recentAvg = mean(recentStarts);
   let label = "判定不足";
@@ -423,8 +460,9 @@ function trend(records, recentDays) {
 
 function credibility(records, reachedCount) {
   const dates = new Set(records.map((record) => record.date).filter(Boolean));
-  const known = records.filter((record) => record.chanceKnown).length;
-  const coverage = records.length ? (known / records.length) * 100 : 0;
+  const hits = hitRecords(records);
+  const known = hits.filter((record) => record.chanceKnown).length;
+  const coverage = hits.length ? (known / hits.length) * 100 : 0;
   const score = Math.min(50, reachedCount) * 1.0 + Math.min(10, dates.size) * 3 + Math.min(20, coverage / 5);
   let label = "低";
   if (score >= 75) label = "高";
@@ -523,10 +561,11 @@ function renderUnitPicker(units) {
   picker.innerHTML = units
     .map((unit) => {
       const selected = String(unit.key) === String(appState.selectedUnitKey);
+      const tone = unitTone(unit);
       return `
-        <button class="unit-button ${selected ? "selected" : ""}" type="button" data-unit-key="${esc(unit.key)}">
-          <strong>${esc(unit.label)}</strong>
-          <span>${number(unit.hits)}件 / ${odds(unit.avgStart)}</span>
+        <button class="unit-button ${tone} ${selected ? "selected" : ""}" type="button" data-unit-key="${esc(unit.key)}">
+          <strong>${esc(compactUnitLabel(unit.label))}</strong>
+          <span>${pct(unit.rate100)} / ${number(unit.hits)}件</span>
         </button>
       `;
     })
@@ -546,6 +585,13 @@ function setCurrentStart(value) {
 function appendCurrentStart(part) {
   const current = cleanCurrentStart($("#currentStartInput").value);
   setCurrentStart(current === "0" ? part : `${current}${part}`);
+}
+
+function unitTone(unit) {
+  if (!unit || unit.sampleCount100 < 5) return "";
+  if (unit.rate100 >= 25) return "good";
+  if (unit.rate100 <= 10) return "bad";
+  return "neutral";
 }
 
 function analyzeAndRender() {
@@ -572,7 +618,7 @@ function analyzeAndRender() {
   $("#decisionText").className = toneClass(result.rr.tone);
   $("#allRateText").textContent = pct(result.allProb.rate);
   $("#rangeText").textContent = `${number(result.currentStart)}→${number(result.targetStart)}回転`;
-  $("#unitSummary").textContent = `${first.unitLabel} / ${number(records.length)}件`;
+  $("#unitSummary").textContent = `${compactUnitLabel(first.unitLabel)} / 当たり${number(hitRecords(records).length)}件`;
   $("#metrics").innerHTML = [
     metric("当たり件数", `${number(result.allProb.hitCount)} / ${number(result.allProb.reachedCount)}`),
     metric("初当りのみ", pct(result.normalProb.rate)),
@@ -581,9 +627,15 @@ function analyzeAndRender() {
     metric("期待連", `${number(result.rr.expected, 2)}連`),
     metric("残り平均", `${number(result.allProb.avgRemaining)}回転`),
   ].join("");
+  const noHitNote = result.allProb.noHitCount
+    ? ` / 終了回転${number(result.allProb.noHitCount)}件を未当たりとして分母に含む`
+    : "";
+  const partialNote = result.allProb.partialNoHitCount
+    ? ` / 目標未到達の終了回転${number(result.allProb.partialNoHitCount)}件は除外`
+    : "";
   $("#notes").innerHTML = [
     `<div class="note"><strong>${esc(result.tr.label)}</strong><br>直近平均 ${number(result.tr.recentAvg)}回転 / 長期平均 ${number(result.tr.longAvg)}回転</div>`,
-    `<div class="note"><strong>リスク ${esc(result.rr.risk)} / リターン ${esc(result.rr.ret)}</strong><br>${esc(result.cred.reasons.join(" / "))}</div>`,
+    `<div class="note"><strong>リスク ${esc(result.rr.risk)} / リターン ${esc(result.rr.ret)}</strong><br>${esc(result.cred.reasons.join(" / ") + noHitNote + partialNote)}</div>`,
   ].join("");
   $("#rangeCards").innerHTML = result.ranges.map((item) => `
     <button class="range-card" type="button" data-range="${item.range}">
